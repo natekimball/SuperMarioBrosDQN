@@ -1,0 +1,4 @@
+gym-super-mario-bros==7.4.0
+tensorflow==2.15.0
+numpy==1.26.2
+matplotlib==3.8.2
