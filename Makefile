@@ -6,7 +6,7 @@ sync:
 get-results:
 	-rsync -ravz tma5gv@rivanna:/scratch/tma5gv/SuperMarioRL/out .
 
-get-model:
+get-models:
 	-rsync -ravz tma5gv@rivanna:/scratch/tma5gv/SuperMarioRL/models .
 
 run:

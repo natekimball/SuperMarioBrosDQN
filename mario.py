@@ -7,14 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import argparse
-    
-env = gym.make('SuperMarioBros-v2', apply_api_compatibility=True)#, render_mode="human")
-env = JoypadSpace(env, SIMPLE_MOVEMENT)
 
-state_shape = env.observation_space.shape
-action_size = env.action_space.n
-
-def train(agent, batch_size=32, timesteps=1000000, render=False, save_dir='models/mario'):
+def train(env, agent, batch_size=32, timesteps=1000000, render=False, save_dir='models/mario'):
     high_scores = []
     record = 0
     done = True
@@ -48,7 +42,7 @@ def plot(high_scores):
     plt.savefig('out/mario_scores.png')
     plt.close()
     
-def test(agent, render=True):
+def test(env, agent, render=True):
     done = True
     high_score = 0
     for step in tqdm(range(1000)):
@@ -74,16 +68,21 @@ def parse_arguments():
     return parser.parse_args()
 
 def main():
+    env = gym.make('SuperMarioBros-v2', apply_api_compatibility=True, render_mode="human" if args.render else None)
+    env = JoypadSpace(env, SIMPLE_MOVEMENT)
+    state_shape = env.observation_space.shape
+    action_size = env.action_space.n
     args = parse_arguments()
+    
     if args.load_model:
-        agent = DQNAgent(state_shape, action_size, load_model=args.load_model)
+        agent = DQNAgent(state_shape, action_size, model_path=args.load_model)
     else:
         agent = DQNAgent(state_shape, action_size)
     if args.test:
         agent.test_mode = True
-        test(agent, render=args.render)
+        test(env, agent, render=args.render)
     else:
-        train(agent, batch_size=args.batch_size, timesteps=args.time, render=args.render, save_dir=args.save_dir)
+        train(env, agent, batch_size=args.batch_size, timesteps=args.time, render=args.render, save_dir=args.save_dir)
 
 if __name__ == '__main__':
     main()
