@@ -6,32 +6,92 @@ from keras.optimizers import Adam
 from collections import deque
 import random
 
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Conv2D, BatchNormalization, Activation, Add, Flatten, Dense, AveragePooling2D, GlobalAveragePooling2D, MaxPooling2D
+
+def residual_block(inputs, filters):
+    x = Conv2D(filters, kernel_size=(3, 3), padding='same')(inputs)
+    x = BatchNormalization()(x)
+    x = Activation('elu')(x)
+    x = Conv2D(filters, kernel_size=(3, 3), padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Add()([inputs, x])
+    x = Activation('elu')(x)
+    return x
+
+def build_model(input_shape, output_size, name='medium'):
+    if name == 'big':
+        inputs = Input(shape=input_shape)
+        x = Conv2D(128, kernel_size=(4, 4), strides=(1, 1))(inputs)
+        x = BatchNormalization()(x)
+        x = Activation('elu')(x)
+        x = residual_block(x, 128)
+        x = AveragePooling2D(pool_size=(2, 2))(x)
+        x = residual_block(x, 128)
+        x = AveragePooling2D(pool_size=(2,2))(x)
+        x = Flatten()(x)
+        x = Dense(256)(x)
+        x = Dense(output_size)(x)
+        model = Model(inputs=inputs, outputs=x)
+    elif name == 'medium':
+        model = Sequential([
+            Conv2D(64, kernel_size=(4, 4), strides=(1, 1), input_shape=input_shape),
+            BatchNormalization(),
+            Activation('elu'),
+            MaxPooling2D(pool_size=(2, 2)),
+            Conv2D(128, kernel_size=(3, 3), strides=(1, 1), input_shape=input_shape),
+            BatchNormalization(),
+            Activation('elu'),
+            MaxPooling2D(pool_size=(2, 2)),
+            Conv2D(256, kernel_size=(3, 3), strides=(1, 1), input_shape=input_shape),
+            BatchNormalization(),
+            Activation('elu'),
+            GlobalAveragePooling2D(),
+            Dense(output_size)
+        ])
+    elif name == 'small':
+        model = Sequential([
+            Conv2D(64, kernel_size=(4, 4), strides=(1, 1), input_shape=input_shape),
+            BatchNormalization(),
+            Activation('relu'),
+            Conv2D(128, kernel_size=(3, 3), strides=(1, 1), input_shape=input_shape),
+            BatchNormalization(),
+            Activation('relu'),
+            Flatten(),
+            Dense(output_size),
+        ])
+    elif name == 'extra-small':
+        model = Sequential([
+            Conv2D(64, kernel_size=(4, 4), strides=(1, 1), input_shape=input_shape),
+            BatchNormalization(),
+            Activation('relu'),
+            Flatten(),
+            Dense(output_size),
+        ])
+    else:
+        raise ValueError('Invalid model')
+    return model
+
 class DQNAgent:
-    def __init__(self, state_shape, action_size, max_mem=4000, epsilon_decay=0.9999, gamma=0.99, test_mode=False, model_path=None):
+    def __init__(self, state_shape, action_size, max_mem=4000, epsilon_decay=0.9999, gamma=0.99, epsilon_greedy=True, model_path=None, initial_epsilon=1.0, learning_rate=0.001, save_dir='models/mario', model='medium'):
         self.state_shape = state_shape
-        print(state_shape)
         self.action_size = action_size
         self.memory = deque(maxlen=max_mem)
         self.gamma = gamma  # discount rate
-        self.epsilon = 1.0  # exploration rate
+        self.epsilon = initial_epsilon if not epsilon_greedy else 0 # exploration rate
         self.epsilon_min = 0.01
         self.epsilon_decay = epsilon_decay
-        self.learning_rate = 0.001
+        self.optimizer = Adam(learning_rate=learning_rate)
         if model_path is not None:
             self.model = self._load_model(model_path)
         else:
-            self.model = self._build_model()
-        self.test_mode = test_mode
+            self.model = self._build_model(model)
+        self.epsilon_greedy = epsilon_greedy
+        self.save_dir = save_dir
 
-    def _build_model(self):
-        model = Sequential([
-            Conv2D(32, kernel_size=(3, 3), activation='selu', padding='same', input_shape=self.state_shape),
-            # Conv2D(64, kernel_size=(3, 3), activation='selu', padding='same'),
-            Flatten(),
-            # Dense(64, activation='selu'),
-            Dense(self.action_size, activation='linear')
-        ])
-        model.compile(loss='mse', optimizer=Adam(learning_rate=self.learning_rate))
+    def _build_model(self, model_name):
+        model = build_model(self.state_shape, self.action_size, model_name)
+        model.compile(loss='mse', optimizer=self.optimizer)
         return model
     
     def _load_model(self, filename):
@@ -41,7 +101,7 @@ class DQNAgent:
         self.memory.append((state, action, reward, next_state, done))
 
     def act(self, state):
-        if not self.test_mode and np.random.rand() <= self.epsilon:
+        if self.epsilon_greedy and np.random.rand() <= self.epsilon:
             return random.randrange(self.action_size)
         q_values = self.model.predict(np.reshape(state, [1, 240, 256, 3]), verbose=0)[0]
         return np.argmax(q_values)
@@ -67,46 +127,8 @@ class DQNAgent:
         
         self.model.fit(states, targets, verbose=0)
         
-        if self.epsilon > self.epsilon_min:
+        if self.epsilon_greedy and self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
-    def save(self, filename):
-        self.model.save(filename)
-
-class MockDQNAgent:
-    def __init__(self, state_shape, action_size, max_mem=10):
-        self.action_size = action_size
-
-    def _build_model(self):
-        pass
-
-    def remember(self, state, action, reward, next_state, done):
-        pass
-
-    def act(self, state):
-        return random.randrange(self.action_size)
-
-    def replay(self, batch_size):
-        pass
-
-# def train_dqn(episode):
-#     loss = []
-#     agent = DQNAgent(state_size, action_size)
-#     for e in range(episode):
-#         state = get_state()  # Define your own function to get the state
-#         state = np.reshape(state, [1, state_size])
-#         done = False
-#         i = 0
-#         while not done:
-#             action = agent.act(state)
-#             next_state, reward, done = step(action)  # Define your own function to take a step
-#             next_state = np.reshape(next_state, [1, state_size])
-#             agent.remember(state, action, reward, next_state, done)
-#             state = next_state
-#             if done:
-#                 print("episode: {}/{}, score: {}, e: {:.2}".format(e, episode, i, agent.epsilon))
-#                 break
-#             if len(agent.memory) > batch_size:
-#                 agent.replay(batch_size)
-#         if e % 10 == 0:
-#             agent.save("./save/mario-dqn.h5")
+    def save(self):
+        self.model.save(self.save_dir)

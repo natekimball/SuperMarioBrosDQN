@@ -8,18 +8,19 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import argparse
 
-def train(env, agent, batch_size=32, timesteps=1000000, render=False, save_dir='models/mario', record=0):
-    f = open('temp','a')
+
+def train(env, agent, batch_size=64, timesteps=1000000, render=False, record=0):
     done = True
+    score = 0
     for step in tqdm(range(timesteps)):
-        if step % 100 == 0:
-            f.write((str(record) + '\n'))
         if done:
+            print(score)
             state, info = env.reset()
         action = agent.act(state)
         next_state, reward, terminated, truncated, info = env.step(action)
         if render:
             env.render()
+        score = info['score']
         record = max(record, info['score'])
         done = terminated or truncated
         agent.remember(state, action, reward, next_state, done)
@@ -27,28 +28,8 @@ def train(env, agent, batch_size=32, timesteps=1000000, render=False, save_dir='
         if len(agent.memory) > batch_size:
             agent.replay(batch_size)
 
-    f.write((str(record) + '\n'))
-    f.close()
     env.close()
-    agent.save(save_dir)
-    plot()
-
-def write(record, filename='temp'):
-    with open(filename, 'a') as f:
-        f.write(str(record) + '\n')
-
-def plot(high_scores):
-    plt.figure(figsize=(10, 5))
-    plt.plot(high_scores)
-    plt.xlabel('Every 500th time step')
-    plt.ylabel('High Score')
-    plt.savefig('out/mario_scores.png')
-    plt.close()
-    
-def plot():
-    with open('temp', 'r') as f:
-        scores = map(int, f.readlines())
-        plot(scores)
+    agent.save()
     
 def test(env, agent, render=True):
     done = True
@@ -75,6 +56,9 @@ def parse_arguments():
     parser.add_argument('--save_dir', type=str, default='models/mario', help='Directory to save model to')
     parser.add_argument('--no_epsilon', action='store_false', help='no epsilon greedy')
     parser.add_argument('--record', type=int, default=0, help='current record')
+    parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate for training')
+    parser.add_argument('--save_model_dir', type=str, default='models/mario', help='directory to save model in')
+    parser.add_argument('--model', type=str, default='medium', help='model to create if no model loaded')
     return parser.parse_args()
 
 def main():
@@ -84,15 +68,15 @@ def main():
     state_shape = env.observation_space.shape
     action_size = env.action_space.n
     
+    epsilon_greedy = not (args.no_epsilon or args.test)
     if args.load_model:
-        agent = DQNAgent(state_shape, action_size, model_path=args.load_model, initial_epsilon=0 if args.no_epsilon else 1.0)
+        agent = DQNAgent(state_shape, action_size, model_path=args.load_model, epsilon_greedy=epsilon_greedy, learning_rate=args.learning_rate, save_dir=args.save_model_dir)
     else:
-        agent = DQNAgent(state_shape, action_size)
+        agent = DQNAgent(state_shape, action_size, epsilon_greedy=epsilon_greedy, learning_rate=args.learning_rate, save_dir=args.save_model_dir, model=args.model)
     if args.test:
-        agent.test_mode = True
         test(env, agent, render=args.render)
     else:
-        train(env, agent, batch_size=args.batch_size, timesteps=args.time, render=args.render, save_dir=args.save_dir)
+        train(env, agent, batch_size=args.batch_size, timesteps=args.time, render=args.render, record=args.record)
 
 if __name__ == '__main__':
     main()
